@@ -55,7 +55,7 @@ int se_select_roi(const char *file, struct roi *roi);
  * \param roi Frame comparison region for slide detection, whole frame on NULL
  * \return 0 on success, -1 on failure
  */
-int se_extract_slides(const char *file, const char *outprefix, struct roi *roi);
+int se_extract_slides(const char *file, const char *outprefix, struct roi *roi, double threshold);
 
 #ifdef __cplusplus
 }

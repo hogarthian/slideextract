@@ -44,13 +44,14 @@ version ()
 static void
 help()
 {
-	puts ("Usage: slideextract [OPTION] infile outprefix\n\
+    puts ("Usage: slideextract [OPTION] infile outprefix\n\
 \n\
 Extract slides from video.\n\
 \n\
   -g          Launch gui to set comparison region, press any key when done\n\
   -r X.Y:WxH  Manually set comparison region by specifying a starting point X.Y\n\
               and width & height WxH\n\
+  -t THRESH   Set comparison threshold (default: 0.999)\n\
 \n\
   -h  Display this help and exit\n\
   -V  Output version information and exit\n\
@@ -58,61 +59,69 @@ Extract slides from video.\n\
 Select a comparision region (e.g. slide number) for faster and more\n\
 accurate extraction.\n");
 
-	exit (0);
+    exit (0);
 }
 
 int
 main (int argc, char **argv)
 {
-	struct roi roi;
-	bool gflag = 0;
-	bool rflag = 0;
-	int c;
-	int ret;
+    struct roi roi;
+    bool gflag = 0;
+    bool rflag = 0;
+    int c;
+    int ret;
+    double threshold = 0.999;  // Default threshold
 
-	while ((c = getopt(argc, argv, "gr:Vh")) != -1) {
-		switch (c) {
-			case 'g':
-				gflag = 1;
-				break;
+    while ((c = getopt(argc, argv, "gr:t:Vh")) != -1) {
+        switch (c) {
+            case 'g':
+                gflag = 1;
+                break;
 
-			case 'r':
-				rflag = 1;
-				if (sscanf(optarg, "%d.%d:%dx%d", &roi.x, &roi.y, &roi.width, &roi.height) != 4)
-					help();
-				break;
+            case 'r':
+                rflag = 1;
+                if (sscanf(optarg, "%d.%d:%dx%d", &roi.x, &roi.y, &roi.width, &roi.height) != 4)
+                    help();
+                break;
 
-			case 'V':
-				version();
-				break;
+            case 't':
+                threshold = atof(optarg);
+                if (threshold <= 0 || threshold > 1) {
+                    fprintf(stderr, "Threshold must be between 0 and 1\n");
+                    exit(1);
+                }
+                break;
 
-			case 'h':
-			case '?':
-			default:
-				help();
-		}
-	}
-	argc -= optind;
-	argv += optind;
+            case 'V':
+                version();
+                break;
 
-	if (argc != 2 || (gflag && rflag))
-		help();
+            case 'h':
+            case '?':
+            default:
+                help();
+        }
+    }
+    argc -= optind;
+    argv += optind;
 
-	const char *file = *argv++;
-	const char *outprefix = *argv;
+    if (argc != 2 || (gflag && rflag))
+        help();
 
-	if (rflag)
-		return se_extract_slides(file, outprefix, &roi);
+    const char *file = *argv++;
+    const char *outprefix = *argv;
 
-	if (gflag)
-	{
-		if ((ret = se_select_roi(file, &roi)))
-			return ret;
+    if (rflag)
+        return se_extract_slides(file, outprefix, &roi, threshold);
 
-		printf("Selected ROI: %d.%d:%dx%d\n", roi.x, roi.y, roi.width, roi.height);
-		return se_extract_slides(file, outprefix, &roi);
-	}
+    if (gflag)
+    {
+        if ((ret = se_select_roi(file, &roi)))
+            return ret;
 
-	return se_extract_slides(file, outprefix, NULL);
+        printf("Selected ROI: %d.%d:%dx%d\n", roi.x, roi.y, roi.width, roi.height);
+        return se_extract_slides(file, outprefix, &roi, threshold);
+    }
+
+    return se_extract_slides(file, outprefix, NULL, threshold);
 }
-

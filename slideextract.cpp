@@ -29,6 +29,8 @@
 #include "slideextract.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <iostream>
+#include <string>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -141,38 +143,75 @@ _se_compare_image(Mat &img1, Mat &img2, struct roi *roi)
 }
 
 int
-se_extract_slides(const char *file, const char *outprefix, struct roi *roi)
+se_extract_slides(const char *file, const char *outprefix, struct roi *roi, double threshold)
 {
-	int num = 0;
-	char str[64];
+    int num = 0;
+    char str[256];
 
-	std::vector<int> image_properties;
-	image_properties.push_back(IMWRITE_PNG_COMPRESSION);
-	image_properties.push_back(9);
+    std::vector<int> png_params;
+    png_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
+    png_params.push_back(9);
 
-	Mat current;
-	Mat last;
+    std::vector<int> jpg_params;
+    jpg_params.push_back(cv::IMWRITE_JPEG_QUALITY);
+    jpg_params.push_back(95);
 
-	VideoCapture capture = VideoCapture(file, CAP_ANY);
-	if (!capture.isOpened())
-		return -1;
+    Mat current;
+    Mat last_exported;
 
-	bool is_final_frame = false;
-	while (!is_final_frame) {
-		capture.read(current);
+    VideoCapture capture = VideoCapture(file, CAP_ANY);
+    if (!capture.isOpened()) {
+        std::cerr << "Error: Unable to open video file: " << file << std::endl;
+        return -1;
+    }
 
-		is_final_frame = current.empty();
-		bool is_changed_frame = !current.empty() && !last.empty()
-			&& _se_compare_image (last, current, roi) <= 0.999;
+    bool is_final_frame = false;
+    while (!is_final_frame) {
+        capture.read(current);
 
-		if (is_final_frame || is_changed_frame) {
-			snprintf (str, sizeof(str)/sizeof(*str), "%s%d.png", outprefix, num++);
-			imwrite(str, last, image_properties);
-		}
+        is_final_frame = current.empty();
+        bool is_changed_frame = !current.empty() && !last_exported.empty()
+            && _se_compare_image (last_exported, current, roi) <= threshold;
 
-		last = current.clone();
-	}
+        if (is_final_frame || is_changed_frame || last_exported.empty()) {
+            if (!current.empty()) {
+                double timestamp_ms = capture.get(cv::CAP_PROP_POS_MSEC);
+                int hours = static_cast<int>(timestamp_ms / (1000 * 60 * 60));
+                int minutes = static_cast<int>((timestamp_ms / (1000 * 60)) - (hours * 60));
+                int seconds = static_cast<int>((timestamp_ms / 1000) - (hours * 3600) - (minutes * 60));
+                int milliseconds = static_cast<int>(timestamp_ms) % 1000;
 
-	return 0;
+                snprintf(str, sizeof(str), "%s%02d_%02d_%02d_%03d.png", 
+                         outprefix, hours, minutes, seconds, milliseconds);
+                
+                std::cout << "Attempting to write file: " << str << std::endl;
+                std::cout << "Image size: " << current.cols << "x" << current.rows << std::endl;
+                std::cout << "Image type: " << current.type() << std::endl;
+
+                try {
+                    if (cv::imwrite(str, current, png_params)) {
+                        std::cout << "Successfully wrote PNG image: " << str << std::endl;
+                        last_exported = current.clone();
+                    } else {
+                        std::cerr << "Failed to write PNG image: " << str << std::endl;
+                        std::string jpg_filename = std::string(str);
+                        jpg_filename = jpg_filename.substr(0, jpg_filename.find_last_of('.')) + ".jpg";
+                        if (cv::imwrite(jpg_filename, current, jpg_params)) {
+                            std::cout << "Successfully wrote JPEG image: " << jpg_filename << std::endl;
+                            last_exported = current.clone();
+                        } else {
+                            std::cerr << "Failed to write JPEG image: " << jpg_filename << std::endl;
+                        }
+                    }
+                } catch (const cv::Exception& ex) {
+                    std::cerr << "Exception writing image: " << ex.what() << std::endl;
+                }
+
+                num++;
+            }
+        }
+    }
+
+    std::cout << "Total frames extracted: " << num << std::endl;
+    return 0;
 }
-
